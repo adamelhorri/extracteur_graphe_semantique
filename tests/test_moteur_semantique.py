@@ -61,57 +61,120 @@ class TestMoteurDeRegles(unittest.TestCase):
             self.assertIn(relation, existing_relations,
                           f"La relation '{relation[1]} {relation[0]} {relation[2]}' avec 'recurrence'={relation[3]} n'a pas été trouvée.")
 
-    def test_long_text_with_multiple_sentences(self):
-        # Exemple de texte long contenant plusieurs phrases
-        texte = """
-Paul, un célèbre biologiste, adore observer les comportements des animaux. Son chien Max est un compagnon fidèle, toujours à ses côtés pendant ses recherches. Max est un chien intelligent, souvent attentif aux petits détails que Paul néglige parfois. Ensemble, ils passent de longues heures dans la forêt à observer les oiseaux. Les oiseaux colorés, tels que les perroquets, fascinent Paul par leur beauté et leurs chants mélodieux.
-
-Lors d'une de ses explorations, Paul a rencontré Marie, une amie de longue date qui partage sa passion pour la nature. Elle est une botaniste talentueuse, et elle passe beaucoup de temps à étudier les plantes rares. Paul et Marie discutent souvent des similarités entre le comportement des plantes et des animaux, et ils débattent sur la question de savoir si les plantes ressentent des émotions.
-
-Marie utilise un microscope pour examiner en détail les cellules végétales, tandis que Paul préfère utiliser une caméra pour filmer les interactions des animaux dans leur habitat naturel. Ensemble, ils ont découvert une espèce d'oiseau qui, selon eux, pourrait être une variation rare du perroquet. Ils ont nommé cet oiseau "Perroquet de cristal", en raison de la transparence de ses plumes.
-
-La forêt où ils travaillent est un lieu rempli de merveilles. Les arbres majestueux, hauts de plusieurs mètres, semblent toucher le ciel. Paul est souvent émerveillé par la robustesse des chênes et la douceur des saules pleureurs qui bordent les rivières. Max, lui, adore courir dans les clairières et se rouler dans les feuilles.
-
-Un jour, alors qu'ils exploraient une nouvelle zone de la forêt, Paul et Marie ont trouvé un insecte géant qui ressemblait à une libellule, mais en beaucoup plus grand. Ils ont pris des échantillons pour les étudier dans leurs laboratoires respectifs. Paul pense que cet insecte pourrait avoir des propriétés intéressantes pour la recherche médicale.
-
-Max, toujours curieux, s'est approché d'un nid d'oiseaux pour l'observer de plus près. Marie a averti Paul que Max pourrait déranger les oiseaux, mais Paul lui a répondu que Max était suffisamment prudent pour ne pas causer de problème.
-
-La collaboration entre Paul et Marie est fructueuse. Ensemble, ils ont présenté leurs recherches à plusieurs conférences internationales, où ils ont reçu des éloges pour leur travail novateur. Leurs découvertes ont suscité l'intérêt de nombreux chercheurs, et ils ont été invités à rejoindre un projet de recherche mondial sur la biodiversité.
-
-Marie habite à Paris, une ville qu'elle adore. Chaque matin, elle prend son café dans la cuisine, un endroit calme à côté du salon. Sur la table, elle dispose un vase au-dessus du journal. De temps en temps, elle regarde par la fenêtre pour observer ce qui se passe devant la maison.
-
-Derrière le jardin, il y a un grand parc où les enfants aiment jouer. L’été, elle passe souvent ses soirées à la plage avec ses amis. Elle préfère s'asseoir en-dessous du parasol pour se protéger du soleil.
-
-Le week-end, Marie aime rendre visite chez ses parents qui vivent à la campagne. Dans la cour de la ferme, il y a un vieux puits à côté duquel les enfants jouent souvent.
-
-Lorsqu'elle est fatiguée, elle se repose sur le canapé dans le salon. Elle passe parfois des heures devant la télévision à regarder des films. À la montagne, où elle aime faire des randonnées, les paysages sont magnifiques, avec des sentiers qui montent au-dessus des vallées.
-
+    def afficher_structure_spacy(self, phrase):
         """
+        Affiche la structure des dépendances syntaxiques extraites par spaCy pour la phrase.
+        """
+        print(f"Structure syntaxique pour la phrase : '{phrase}'")
+        doc = self.moteur_regles.nlp(phrase)  # Utilisation du modèle spaCy dans le moteur de règles
+        for token in doc:
+            print(f"Token: {token.text}, Dépendance: {token.dep_}, Tête: {token.head.text}, POS: {token.pos_}")
 
-        # Diviser le texte en phrases
-        phrases = self.text_splitter.split_text_into_sentences(texte)
-
-        # Liste des relations attendues pour les phrases (mettre à jour avec les nouvelles relations)
-        expected_relations = [
-            ('r_agent', 'Paul', 'enseigner', 1),
-            ('r_pos', 'Paul', 'noun', 1),
-            ('r_pos', 'enseigné', 'verb', 1),
-            ('r_isa', 'physique', 'sujet', 1),
-            ('r_has_magn', 'passionné', 'grande', 1),
-            ('r_instr-1', 'Max', 'accompagner', 1),
-            ('r_domain-1', 'jardin', 'fleur', 1),
-            ('r_lemma', 'Paul', 'professeur', 1),
-            ('r_patient', 'physique', 'enseigner', 1),
-            ('r_lieu-1', 'université', 'Paul', 1),
-        ]
-
-        # Appliquer les règles pour chaque phrase individuellement
+    def tester_relation(self, relation_name, phrases, expected_relations):
+        """
+        Méthode générique pour tester une relation donnée.
+        relation_name: le nom de la relation à tester (ex: 'r_associated')
+        phrases: une liste de phrases à tester
+        expected_relations: une liste de relations attendues sous forme de tuples (relation, source, target, recurrence)
+        """
         for phrase in phrases:
+            print(f"Phrase en cours: {phrase}")
+            self.afficher_structure_spacy(phrase)
             self.moteur_regles.appliquer_regles(phrase)
-
+            self.graphe.visualiser_graphe()
+        
         # Vérifier les relations dans les CSVs
         self.verifier_csv(expected_relations)
 
+    def test_r_associated(self):
+        phrases = [
+            "La voiture rouge est rapide.",
+            "Un homme intelligent et courageux a résolu le problème.",
+            "Le chat noir et le chien blanc sont amis.",
+            "La grande maison est magnifique.",
+            "Les livres intéressants sont sur la table.",
+            "Pierre est un homme sage et réfléchi.",
+            "Marie et son amie sont très différentes."
+        ]
+        expected_relations = [
+            ('r_associated', 'voiture', 'rouge', 1),
+            ('r_associated', 'homme', 'intelligent', 1),
+            ('r_associated', 'chat', 'noir', 1),
+            ('r_associated', 'maison', 'grande', 1),
+            ('r_associated', 'livres', 'intéressants', 1),
+            ('r_associated', 'homme', 'sage', 1),
+            ('r_associated', 'Marie', 'amie', 1)
+        ]
+        self.tester_relation('r_associated', phrases, expected_relations)
+
+    def test_r_raff_sem(self):
+        phrases = [
+            "Le chat est un animal domestique.",
+            "La pomme est un fruit.",
+            "Un ordinateur puissant est nécessaire.",
+            "L'avion est un moyen de transport rapide.",
+            "Le lion est un animal dangereux.",
+            "Les logiciels sont des outils indispensables.",
+            "Le professeur est un expert en biologie."
+        ]
+        expected_relations = [
+            ('r_raff_sem', 'animal', 'domestique', 1),
+            ('r_raff_sem', 'pomme', 'fruit', 1),
+            ('r_raff_sem', 'ordinateur', 'puissant', 1),
+            ('r_raff_sem', 'avion', 'moyen', 1),
+            ('r_raff_sem', 'lion', 'dangereux', 1),
+            ('r_raff_sem', 'logiciels', 'indispensables', 1),
+            ('r_raff_sem', 'professeur', 'expert', 1)
+        ]
+        self.tester_relation('r_raff_sem', phrases, expected_relations)
+
+    def test_r_isa(self):
+        phrases = [
+            "Paul, un biologiste, adore les animaux.",
+            "Marie est une enseignante.",
+            "Jean, un expert, a résolu le problème.",
+            "Le chien, un animal domestique, est fidèle.",
+            "La Terre est une planète.",
+            "La pomme, un fruit, est rouge.",
+            "L'avion, un moyen de transport, est rapide."
+        ]
+        expected_relations = [
+            ('r_isa', 'Paul', 'biologiste', 1),
+            ('r_isa', 'Marie', 'enseignante', 1),
+            ('r_isa', 'Jean', 'expert', 1),
+            ('r_isa', 'chien', 'animal', 1),
+            ('r_isa', 'Terre', 'planète', 1),
+            ('r_isa', 'pomme', 'fruit', 1),
+            ('r_isa', 'avion', 'moyen', 1)
+        ]
+        self.tester_relation('r_isa', phrases, expected_relations)
+
+    # Ajouter les autres tests pour les relations suivantes :
+    # 'r_syn', 'r_hypo', 'r_anto', 'r_agent', 'r_patient', 'r_has_magn', 'r_has_antimagn', 'r_family', 'r_lieu'
+    
+    # Exemple pour r_syn
+    def test_r_syn(self):
+        phrases = [
+            "Paul est fort, puissant même.",
+            "Jean est intelligent et brillant.",
+            "Le chat est rusé ou astucieux.",
+            "Le chien est grand et immense.",
+            "La voiture est rapide ou véloce.",
+            "Marie est jolie, belle même.",
+            "L'enfant est sage ou obéissant."
+        ]
+        expected_relations = [
+            ('r_syn', 'fort', 'puissant', 1),
+            ('r_syn', 'intelligent', 'brillant', 1),
+            ('r_syn', 'rusé', 'astucieux', 1),
+            ('r_syn', 'grand', 'immense', 1),
+            ('r_syn', 'rapide', 'véloce', 1),
+            ('r_syn', 'jolie', 'belle', 1),
+            ('r_syn', 'sage', 'obéissant', 1)
+        ]
+        self.tester_relation('r_syn', phrases, expected_relations)
 
 if __name__ == '__main__':
+    # Exécuter les tests spécifiques en fonction de la relation que vous souhaitez tester
     unittest.main()
+    #tester:python -m unittest TestMoteurDeRegles.test_r_rel

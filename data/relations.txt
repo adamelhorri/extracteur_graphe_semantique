@@ -1,39 +1,43 @@
+#-----------------------------------------------------------
 # Règles pour r_associated
 # Association entre adjectifs qualifiant des noms
-$x.pos_ == 'adj' & $x.head.i == $y.i & $y.pos_ == 'noun' & $y.dep_ == 'nsubj' ⇒ $x r_associated $y
+$x.pos_ == 'adj' & $x.head.i == $y.i & $y.pos_ == 'noun' & $y.dep_ in ['nsubj', 'obj'] ⇒ $x r_associated $y
 
 # Association entre adjectifs coordonnés
 $x.pos_ == 'adj' & $y.pos_ == 'adj' & $x.dep_ == 'conj' & $x.head.i == $y.i & $x.head.pos_ == 'noun' ⇒ $x r_associated $y & $y r_associated $x
-
+#-----------------------------------------------------------
 # Règles pour r_raff_sem
 # Relations de raffinement sémantique entre un nom et un adjectif qualifiant
 $x.pos_ == 'noun' & $y.pos_ == 'adj' & $y.head.i == $x.i & $y.dep_ == 'amod' ⇒ $y r_raff_sem $x
 
 # Relations de raffinement sémantique entre noms composés
-$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'compound' & $y.head.i == $x.i & $x.dep_ == 'nsubj' ⇒ $y r_raff_sem $x
+$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'compound' & $y.head.i == $x.i ⇒ $y r_raff_sem $x
 
 # Raffinement via adjectifs modifiant des noms
-$x.pos_ == 'noun' & $y.pos_ == 'adj' & $y.dep_ == 'amod' & $y.head.i == $x.i & $x.dep_ == 'nsubj' ⇒ $y r_raff_sem $x
-
+$x.pos_ == 'noun' & $y.pos_ == 'adj' & $y.dep_ == 'amod' & $y.head.i == $x.i ⇒ $y r_raff_sem $x
+#-----------------------------------------------------------
 # Règle pour r_pos
 $x ⇒ $x r_pos $x.pos_
-
+#-----------------------------------------------------------
 # Règles pour r_syn
 # Synonymes via ressource lexicale, restreint à la même catégorie grammaticale
 $x.pos_ == $s.pos_ ⇒ pour chaque $s dans synonymes($x.text): if $s.pos_ == $x.pos_ then $x r_syn $s
 
 # Synonymes via apposition
-$x.dep_ == 'appos' & $x.head.i == $y.i & $x.pos_ == 'noun' & $y.pos_ == 'noun' ⇒ $x r_syn $y & $y r_syn $x
+$x.dep_ == 'appos' & $x.head.i == $y.i & $x.pos_ == $y.pos_ ⇒ $x r_syn $y
 
 # Synonymes via coordination entre adjectifs
 $x.dep_ == 'conj' & $cc.text == 'ou' & $x.head.i == $y.head.i & $x.pos_ == 'adj' & $y.pos_ == 'adj' ⇒ $x r_syn $y & $y r_syn $x
+#-----------------------------------------------------------
+# Règles pour r_isa (Hyponymie)
+# Relation r_isa basée sur l'apposition
+$x.pos_ == 'propn' & $y.pos_ == 'noun' & $y.dep_ == 'appos' & $y.head.i == $x.i ⇒ $x r_isa $y
 
-# Isa via constructions "X est un Y" (copule)
-$x.dep_ == 'nsubj' & $y.dep_ == 'attr' & $cop.dep_ == 'cop' & $cop.head.i == $y.i & $y.head.i == $cop.head.i & $x.head.pos_ == 'noun' ⇒ $x r_isa $y
-
+#-----------------------------------------------------------
+# Règles pour r_hypo (Hyponymie)
 # Hyponymie via compléments de nom
-$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'nmod' & $y.head.i == $x.i & $x.dep_ == 'nsubj' ⇒ $y r_hypo $x
-
+$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'nmod' & $y.head.i == $x.i ⇒ $y r_hypo $x
+#-----------------------------------------------------------
 # Règles pour r_agent et r_patient
 # Agent de l'action verbale
 $x.dep_ == 'nsubj' & $x.head.i == $y.i & $y.pos_ == 'verb' & $y.dep_ == 'ROOT' ⇒ $x r_agent $y
@@ -41,33 +45,33 @@ $x.dep_ == 'nsubj' & $x.head.i == $y.i & $y.pos_ == 'verb' & $y.dep_ == 'ROOT' �
 # Patient de l'action verbale
 ($x.dep_ == 'obj' | $x.dep_ == 'obl') & $x.head.i == $y.i & $y.pos_ == 'verb' & $y.dep_ == 'ROOT' ⇒ $x r_patient $y
 
-# Patient d'une phrase passive
+# Patient dans une phrase passive
 $x.dep_ == 'nsubj:pass' & $x.head.i == $y.i & $y.pos_ == 'verb' & $y.dep_ == 'ROOT' ⇒ $x r_patient $y
 
 # Agent dans une subordonnée
 $x.dep_ == 'csubj' & $x.head.i == $y.i & $y.pos_ == 'verb' ⇒ $x r_agent $y
 
 # Patient dans une phrase directe
-$x.dep_ == 'dobj' & $x.head.i == $y.i & $x.pos_ == 'verb' ⇒ $x r_patient $y
-
+$x.dep_ == 'dobj' & $x.head.i == $y.i ⇒ $x r_patient $y
+#-----------------------------------------------------------
 # Règles pour r_lemma
 $x ⇒ $x r_lemma $x.lemma_
-
+#-----------------------------------------------------------
 # Règles pour r_has_magn (Amplification sémantique)
 $x.pos_ == 'noun' & $y.pos_ == 'adj' & $x.dep_ == 'nmod' & $y.dep_ == 'amod' & $x.head.i == $y.head.i ⇒ $x r_has_magn $y
-
+#-----------------------------------------------------------
 # Règles pour r_has_antimagn (Atténuation sémantique)
-$x.pos_ == 'noun' & $y.pos_ == 'adj' & $x.dep_ == 'nmod' & $y.dep_ == 'compound' & $x.head.i == $y.head.i ⇒ $x r_has_antimagn $y
-
+$x.pos_ == 'noun' & $y.pos_ == 'adj' & $x.dep_ == 'nmod' & $y.dep_ == 'amod' & $x.text.lower == 'petit' ⇒ $x r_has_antimagn $y
+#-----------------------------------------------------------
 # Règles pour r_family
-$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'compound' & $x.head.i == $y.head.i ⇒ $x r_family $y & $y r_family $x
-
+$x.pos_ == 'noun' & $y.pos_ == 'noun' & $y.dep_ == 'compound' & $x.head.i == $y.i ⇒ $x r_family $y & $y r_family $x
+#-----------------------------------------------------------
 # Règles pour r_carac (Caractéristique)
 $x.pos_ == 'adj' & $y.pos_ == 'noun' & $x.dep_ == 'amod' & $x.head.i == $y.i ⇒ $x r_carac $y
-
+#-----------------------------------------------------------
 # Règles pour r_lieu
 # Préposition 'dans'
-$x.pos_ == 'noun' & $y.pos_ == 'noun' & $prep.text == 'dans' & $x.dep_ == 'nmod' & $prep.head.i == $y.i ⇒ $y r_lieu $x
+$x.pos_ == 'noun' & $y.pos_ == 'noun' & $prep.text == 'dans' & $x.dep_ == 'nmod' & $prep.head.i == $y.i ⇒ $x r_lieu $y
 
 # Préposition 'au-dessus de'
 $x.pos_ == 'noun' & $y.pos_ == 'noun' & $prep.text == 'au-dessus de' & $x.dep_ == 'nmod' & $prep.head.i == $y.i ⇒ $y r_lieu $x

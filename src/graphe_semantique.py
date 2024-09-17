@@ -1,4 +1,5 @@
-# graphe_semantique.py
+import networkx as nx
+import matplotlib.pyplot as plt
 
 class GrapheSemantique:
     def __init__(self):
@@ -28,3 +29,28 @@ class GrapheSemantique:
     def get_toutes_relations(self):
         """Retourne toutes les relations du graphe."""
         return self.relations
+
+    def visualiser_graphe(self):
+        """Visualise le graphe avec les nœuds et les relations."""
+        G = nx.DiGraph()
+
+        # Ajouter les nœuds
+        for noeud, pos in self.noeuds.items():
+            G.add_node(noeud, label=pos)
+
+        # Ajouter les relations (edges)
+        for source, relation, cible in self.relations:
+            G.add_edge(source, cible, label=relation)
+
+        # Positionner les nœuds
+        pos = nx.spring_layout(G)
+
+        # Dessiner les nœuds et les relations
+        nx.draw(G, pos, with_labels=True, node_color='lightblue', font_size=10, node_size=3000)
+
+        # Ajouter les étiquettes de relation
+        edge_labels = {(source, cible): relation for source, relation, cible in self.relations}
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+
+        # Afficher le graphe
+        plt.show()

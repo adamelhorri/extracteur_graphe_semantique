@@ -253,7 +253,8 @@ class MoteurDeRegles:
             # Filtrer les éléments pour ne garder que ceux présents dans le document (lemmes)
             elements_present = [elem for elem in elements if self.graphe.existe_noeud(elem.lower())]
             if not elements_present:
-                logging.warning(f"Aucun élément trouvé dans le document pour la fonction '{fonction}' avec '{source_lemma}'.")
+               # logging.warning(f"Aucun élément trouvé dans le document pour la fonction '{fonction}' avec '{source_lemma}'.")
+               pass
             for elem in elements_present:
                 elem_lemma = elem.lower()
                 try:
@@ -287,12 +288,10 @@ class MoteurDeRegles:
                         else:
                             return str(attr_value)
                     else:
-                        logging.error(f"Attribut '{attr_name}' non trouvé pour la variable '${var}'")
                         return 'False'
                 else:
                     return f'"{val.text.lower()}"' if hasattr(val, 'text') else f'"{str(val).lower()}"'
             else:
-                logging.error(f"Variable '${var}' non trouvée dans le mapping")
                 return 'False'
 
         try:
@@ -328,12 +327,18 @@ class MoteurDeRegles:
                     if not self.graphe.existe_noeud(cible_label):
                         self.graphe.ajouter_noeud(cible_label, pos='noun')
 
+                    # Ajouter la relation dans le graphe
+                    if not self.graphe.existe_relation(source_label, relation, cible_label):
+                        self.graphe.ajouter_relation(source_label, relation, cible_label)
+
                     # Ajouter ou mettre à jour la relation dans le CSV
                     self.ajouter_relation_csv(source_label, relation, cible_label)
 
                     # Si la relation n'était pas inversée (pas de -1), on ajoute l'inverse automatiquement
                     if not inverse_flag:
                         inverse_relation = f"{relation}-1"
+                        if not self.graphe.existe_relation(cible_label, inverse_relation, source_label):
+                            self.graphe.ajouter_relation(cible_label, inverse_relation, source_label)
                         self.ajouter_relation_csv(cible_label, inverse_relation, source_label)
                 except Exception as e:
                     logging.error(f"Erreur lors de l'ajout du noeud ou de la relation: {e}")
