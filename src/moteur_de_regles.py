@@ -2,16 +2,13 @@
 
 import itertools
 import re
-import spacy
 import os
 import csv
 import logging
 from collections import defaultdict
 from ressources_lexicales import RessourcesLexicales
 from graphe_semantique import GrapheSemantique
-
-# Configuration du logging pour n'afficher que les avertissements et les erreurs
-logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
+from SyntaxicExtraction import SyntaxicExtraction
 
 class MoteurDeRegles:
     def __init__(self, graphe):
@@ -23,9 +20,8 @@ class MoteurDeRegles:
             'r_hypo', 'r_anto', 'r_anto_syntaxique',
             'r_agent', 'r_patient', 'r_succ',
             'r_lemma', 'r_has_magn', 'r_has_antimagn',
-            'r_family','r_lieu'
+            'r_family', 'r_lieu', 'r_carac'  # Ajout de r_carac
         ]
-        # Ajout de la correspondance entre les relations et leurs inverses
         self.relations_inverses = {
             'r_agent': 'r_agent-1',
             'r_patient': 'r_patient-1',
@@ -35,17 +31,12 @@ class MoteurDeRegles:
             # Ajoutez ici toutes les autres relations et leurs inverses si nécessaire
         }
 
-
-        try:
-            self.nlp = spacy.load('fr_core_news_md')
-            logging.warning("Modèle spaCy chargé avec succès.")
-        except Exception as e:
-            logging.error(f"Impossible de charger le modèle spaCy: {e}")
-            self.nlp = None
         self.initialiser_csv()
+        self.word_counter = 0  # Compteur pour générer des identifiants uniques
+        self.token_to_word_id = {}  # Mapping des token_primarykey aux word_ids
 
     def initialiser_csv(self):
-        """Créer les fichiers CSV pour chaque type de relation avec les en-têtes si ils n'existent pas."""
+        """Créer les fichiers CSV pour chaque type de relation avec les en-têtes s'ils n'existent pas."""
         current_dir = os.path.dirname(os.path.abspath(__file__))
         data_dir = os.path.join(current_dir, '..', 'data')
         data_dir = os.path.abspath(data_dir)
@@ -83,62 +74,84 @@ class MoteurDeRegles:
 
     def appliquer_regles(self, texte):
         """Appliquer les règles après analyse du texte."""
-        if not self.nlp:
-            logging.error("Le modèle spaCy n'est pas chargé.")
-            return
         try:
             self.ressources = RessourcesLexicales(texte)
-            doc = self.nlp(texte)
-            self.appliquer_relations(doc)
+            syntaxic_extraction = SyntaxicExtraction(texte)
+            tokens = syntaxic_extraction.tokens
+
+            self.appliquer_relations(tokens)
             for regle in self.regles:
-                self.appliquer_regle(regle, doc)
+                self.appliquer_regle(regle, tokens)
             # Les relations sont déjà enregistrées au fur et à mesure
         except Exception as e:
             logging.error(f"Erreur lors de l'application des règles: {e}")
 
-    def appliquer_relations(self, doc):
+    def appliquer_relations(self, tokens):
         """Appliquer les relations prédéfinies entre les tokens."""
-        for i in range(len(doc)):
-            mot = doc[i]
+        previous_word_id = None
+
+        for mot in tokens:
+            self.word_counter += 1
+            word_id = f"word_{self.word_counter}"
+            pos_id = f"pos_{self.word_counter}"
+            lemma_id = f"lemma_{self.word_counter}"
+
             mot_lemma = mot.lemma_.lower()
             mot_pos = mot.pos_.lower()
+
             try:
-                # Ajouter la relation r_lemma
-                self.graphe.ajouter_relation(mot.text, "r_lemma", mot_lemma)
-                self.ajouter_relation_csv(mot.text, "r_lemma", mot_lemma)
+                # Ajouter le nœud central du mot avec un identifiant unique
+                self.graphe.ajouter_noeud(word_id, 'word', mot.text)
 
-                # Ajouter le noeud dans le graphe
-                self.graphe.ajouter_noeud(mot_lemma, mot_pos)
+                # Mapper le token_primarykey à word_id
+                if mot.token_primarykey:
+                    self.token_to_word_id[mot.token_primarykey] = word_id
+                    logging.debug(f"Mapping {mot.token_primarykey} -> {word_id}")
+                else:
+                    logging.error(f"Token '{mot.text}' n'a pas de token_primarykey.")
+
+                # Ajouter le nœud pos unique pour ce mot
+                self.graphe.ajouter_noeud(pos_id, 'pos', mot_pos)
+                self.graphe.ajouter_relation(word_id, "r_pos", pos_id)
+                self.ajouter_relation_csv(word_id, "r_pos", pos_id)
+
+                # Ajouter le nœud lemma unique pour ce mot
+                self.graphe.ajouter_noeud(lemma_id, 'lemma', mot_lemma)
+                self.graphe.ajouter_relation(word_id, "r_lemma", lemma_id)
+                self.ajouter_relation_csv(word_id, "r_lemma", lemma_id)
             except Exception as e:
-                logging.error(f"Erreur lors de l'ajout du lemme '{mot_lemma}' avec POS '{mot_pos}': {e}")
+                logging.error(f"Erreur lors de l'ajout des nœuds pour le mot '{mot.text}': {e}")
 
-            # Gérer la relation r_succ
-            if i < len(doc) - 1:
-                mot_suivant = doc[i + 1]
-                mot_suivant_lemma = mot_suivant.lemma_.lower()
-                mot_suivant_pos = mot_suivant.pos_.lower()
+            # Gérer la relation r_succ avec le mot précédent
+            if previous_word_id:
                 try:
-                    if not self.graphe.existe_relation(mot_lemma, "r_succ", mot_suivant_lemma):
-                        self.graphe.ajouter_relation(mot_lemma, "r_succ", mot_suivant_lemma)
-                        self.ajouter_relation_csv(mot_lemma, "r_succ", mot_suivant_lemma)
+                    if not self.graphe.existe_relation(previous_word_id, "r_succ", word_id):
+                        self.graphe.ajouter_relation(previous_word_id, "r_succ", word_id)
+                        self.ajouter_relation_csv(previous_word_id, "r_succ", word_id)
                 except Exception as e:
-                    logging.error(f"Erreur lors de l'ajout de la relation ('{mot_lemma}', 'r_succ', '{mot_suivant_lemma}'): {e}")
+                    logging.error(f"Erreur lors de l'ajout de la relation 'r_succ' entre '{previous_word_id}' et '{word_id}': {e}")
 
-    def appliquer_regle(self, regle, doc):
-        """Appliquer une règle spécifique au document."""
+            previous_word_id = word_id
+
+    def appliquer_regle(self, regle, tokens):
+        """Appliquer une règle spécifique aux tokens."""
         try:
+            if "⇒" not in regle:
+                logging.error(f"Règle mal formée (manque '⇒') : {regle}")
+                return
+
             conditions, actions = regle.split("⇒")
             conditions = conditions.strip()
             actions = actions.strip()
             variables = self.extraire_variables(conditions + ' ' + actions)
-            combinations, variable_names = self.generer_combinations(variables, doc)
+            combinations, variable_names = self.generer_combinations(variables, tokens)
 
             if not combinations:
                 logging.warning(f"Règle ignorée '{regle}' en raison de variables manquantes.")
                 return
 
-            for tokens in combinations:
-                variable_mapping = dict(zip(variable_names, tokens))
+            for tokens_combination in combinations:
+                variable_mapping = dict(zip(variable_names, tokens_combination))
                 if self.verifier_conditions(conditions, variable_mapping):
                     self.executer_actions(actions, variable_mapping)
         except ValueError:
@@ -151,19 +164,19 @@ class MoteurDeRegles:
         variables = re.findall(r'\$(\w+)', texte)
         return set(variables)
 
-    def generer_combinations(self, variable_names, doc):
+    def generer_combinations(self, variable_names, tokens):
         """Génère toutes les combinaisons possibles de tokens pour les variables."""
         variable_tokens = {}
         for var in variable_names:
             if var == 'cc':
-                tokens = [token for token in doc if token.dep_ == 'cc']
+                tokens_var = [token for token in tokens if token.dep_ == 'cc']
             elif var == 'cop':
-                tokens = [token for token in doc if token.dep_ == 'cop']
+                tokens_var = [token for token in tokens if token.dep_ == 'cop']
             else:
-                tokens = [token for token in doc if not token.is_punct]
+                tokens_var = [token for token in tokens if token.pos_.upper() != 'PUNCT']
 
-            if tokens:
-                variable_tokens[var] = tokens
+            if tokens_var:
+                variable_tokens[var] = tokens_var
             else:
                 variable_tokens[var] = [None]
                 logging.warning(f"Aucun token trouvé pour la variable '${var}'. La règle peut ne pas s'appliquer correctement.")
@@ -186,31 +199,37 @@ class MoteurDeRegles:
                         return 'False'
                     if attr:
                         attr_name = attr
+                        # Utiliser les attributs du token
                         if attr_name == 'text':
-                            return f'"{val.text}"'  # Utilisation de guillemets doubles
+                            return f'"{val.text.lower()}"'
                         elif attr_name == 'text.lower':
                             return f'"{val.text.lower()}"'
+                        elif attr_name == 'lemma_':
+                            return f'"{val.lemma_.lower()}"'
                         elif attr_name == 'dep_':
                             return f'"{val.dep_}"'
                         elif attr_name == 'pos_':
-                            return f'"{val.pos_.lower()}"'  # Convertir POS en minuscules
+                            return f'"{val.pos_.lower()}"'
                         elif attr_name == 'head.i':
-                            if hasattr(val, 'head') and val.head:  # Vérification que le head existe
-                                return str(val.head.i)
+                            if hasattr(val, 'head') and val.head and val.head.token_primarykey in self.token_to_word_id:
+                                return f'"{self.token_to_word_id[val.head.token_primarykey]}"'
                             else:
                                 return 'False'
                         elif attr_name == 'head.pos_':
-                            if hasattr(val, 'head') and hasattr(val.head, 'pos_'):  # Vérification que le head et pos_ existent
+                            if hasattr(val, 'head') and hasattr(val.head, 'pos_'):
                                 return f'"{val.head.pos_.lower()}"'
                             else:
                                 return 'False'
                         elif attr_name == 'i':
-                            return str(val.i)
+                            if val.token_primarykey in self.token_to_word_id:
+                                return f'"{self.token_to_word_id[val.token_primarykey]}"'
+                            else:
+                                return 'False'
                         else:
                             logging.error(f"Attribut '{attr_name}' non pris en charge pour la variable '${var}'")
                             return 'False'
                     else:
-                        return f'"{val.text}"'
+                        return f'"{val.text.lower()}"'
                 else:
                     logging.error(f"Variable '${var}' non trouvée dans le mapping")
                     return 'False'
@@ -218,6 +237,7 @@ class MoteurDeRegles:
             pattern = re.compile(r'\$(\w+)(?:\.([a-zA-Z_.]+))?')
             condition_evaluated = pattern.sub(replace_var, condition_evaluated)
 
+            # Sécuriser l'évaluation
             return eval(condition_evaluated, {}, {})
         except Exception as e:
             logging.error(f"Erreur lors de l'évaluation de la condition '{conditions}': {e}")
@@ -238,32 +258,51 @@ class MoteurDeRegles:
         match = re.match(pattern, action)
         if match:
             var_elem, fonction, var_source, action_interne = match.groups()
-            source_token = variable_mapping[var_source]
+            source_token = variable_mapping.get(var_source)
+            if not source_token:
+                logging.error(f"Source token pour la variable '${var_source}' est manquant.")
+                return
+
+            # Obtenir le lemme du source_token
             if isinstance(source_token, str):
                 source_lemma = source_token.lower()
-            elif hasattr(source_token, 'lemma_'):
+            elif hasattr(source_token, 'lemma_') and source_token.lemma_:
                 source_lemma = source_token.lemma_.lower()
             else:
                 source_lemma = str(source_token).lower()
+
             try:
+                # Récupérer les éléments via la fonction lexicale
                 elements = getattr(self.ressources, fonction)(source_lemma)
             except AttributeError:
                 logging.error(f"La fonction '{fonction}' n'existe pas dans RessourcesLexicales.")
                 return
-            # Filtrer les éléments pour ne garder que ceux présents dans le document (lemmes)
-            elements_present = [elem for elem in elements if self.graphe.existe_noeud(elem.lower())]
+
+            # Filtrer les éléments pour ne garder que ceux présents dans le graphe (lemmes)
+            elements_present = [elem for elem in elements if self.get_word_id_by_lemma(elem.lower())]
             if not elements_present:
-               # logging.warning(f"Aucun élément trouvé dans le document pour la fonction '{fonction}' avec '{source_lemma}'.")
-               pass
+                logging.warning(f"Aucun élément trouvé pour la fonction '{fonction}' avec le lemme '{source_lemma}'.")
+
             for elem in elements_present:
                 elem_lemma = elem.lower()
-                try:
-                    if not self.graphe.existe_noeud(elem_lemma):
-                        self.graphe.ajouter_noeud(elem_lemma, pos='noun')  # POS par défaut
-                except Exception as e:
-                    logging.error(f"Erreur lors de l'ajout du noeud '{elem_lemma}': {e}")
+                word_id = self.get_word_id_by_lemma(elem_lemma)
+                if not word_id:
+                    logging.warning(f"Nœud pour le lemme '{elem_lemma}' non trouvé dans le graphe.")
+                    continue
+
+                # Si des conditions supplémentaires sont nécessaires, les appliquer ici
+                # Exemple : vérifier si $s.pos_ == $x.pos_
+                # Récupérer le word_id de $x (supposé être une variable dans le mapping)
+                x_word_id = variable_mapping.get('x')  # Assurez-vous que 'x' est une variable pertinente
+                if x_word_id and self.graphe.existe_noeud(x_word_id):
+                    x_pos = self.graphe.get_pos_of_word(x_word_id)
+                    s_pos = self.graphe.get_pos_of_word(word_id)
+                    if x_pos != s_pos:
+                        continue  # Filtrer les synonymes qui ne partagent pas la même catégorie grammaticale
+
+                # Map variable to word_id
                 local_mapping = variable_mapping.copy()
-                local_mapping[var_elem] = elem_lemma  # elem is a string (lemma)
+                local_mapping[var_elem] = word_id
                 self.executer_action_simple(action_interne, local_mapping)
         else:
             logging.error(f"Format de boucle non reconnu : {action}")
@@ -284,32 +323,42 @@ class MoteurDeRegles:
                     if hasattr(val, attr_name):
                         attr_value = getattr(val, attr_name)
                         if isinstance(attr_value, str):
-                            return f'"{attr_value}"'
+                            return f'"{attr_value.lower()}"'
                         else:
                             return str(attr_value)
                     else:
                         return 'False'
                 else:
-                    return f'"{val.text.lower()}"' if hasattr(val, 'text') else f'"{str(val).lower()}"'
+                    # Remplacer par le word_id
+                    if isinstance(val, str):
+                        # Si val est déjà un word_id
+                        return f'"{val}"'
+                    elif hasattr(val, 'token_primarykey') and val.token_primarykey in self.token_to_word_id:
+                        return f'"{self.token_to_word_id[val.token_primarykey]}"'
+                    else:
+                        logging.error(f"word_id pour le token '{val.text}' n'existe pas dans le graphe.")
+                        return 'False'
             else:
                 return 'False'
 
         try:
-            # On remplace les variables dans l'action par leur valeur
+            # Remplacer les variables dans l'action par leur valeur
             action_evaluated = pattern.sub(replace_var, action)
 
             # Regex pour identifier la relation (avec ou sans -1)
+            # Exemple: "word_1" r_carac "word_2" ou "word_1" r_carac-1 "word_2"
             match = re.match(r'"([^"]+)"\s+(r_\w+)(-1)?\s+"([^"]+)"', action_evaluated)
             if match:
                 source_label, relation, inverse_flag, cible_label = match.groups()
 
                 # Si la relation est inversée (-1), on inverse les labels source et cible
                 if inverse_flag:
+                    relation = relation[:-2]  # Enlever le '-1'
                     source_label, cible_label = cible_label, source_label
 
                 # Vérifier que la relation commence par 'r_'
                 if not relation.startswith('r_'):
-                    logging.warning(f"Ignoring relation '{relation}' as it does not start with 'r_'")
+                    logging.warning(f"Ignorant la relation '{relation}' car elle ne commence pas par 'r_'.")
                     return
 
                 if 'None' in [source_label, cible_label]:
@@ -321,29 +370,54 @@ class MoteurDeRegles:
                 cible_label = cible_label.lower()
 
                 try:
-                    # Si les noeuds n'existent pas dans le graphe, on les ajoute
+                    # Vérifier que les nœuds existent dans le graphe
                     if not self.graphe.existe_noeud(source_label):
-                        self.graphe.ajouter_noeud(source_label, pos='noun')
+                        logging.warning(f"Nœud source '{source_label}' n'existe pas dans le graphe.")
+                        return
                     if not self.graphe.existe_noeud(cible_label):
-                        self.graphe.ajouter_noeud(cible_label, pos='noun')
+                        logging.warning(f"Nœud cible '{cible_label}' n'existe pas dans le graphe.")
+                        return
 
                     # Ajouter la relation dans le graphe
                     if not self.graphe.existe_relation(source_label, relation, cible_label):
                         self.graphe.ajouter_relation(source_label, relation, cible_label)
+                        self.ajouter_relation_csv(source_label, relation, cible_label)
 
-                    # Ajouter ou mettre à jour la relation dans le CSV
-                    self.ajouter_relation_csv(source_label, relation, cible_label)
-
-                    # Si la relation n'était pas inversée (pas de -1), on ajoute l'inverse automatiquement
-                    if not inverse_flag:
-                        inverse_relation = f"{relation}-1"
+                    # Ajouter l'inverse si défini
+                    inverse_relation = self.relations_inverses.get(relation)
+                    if inverse_relation:
                         if not self.graphe.existe_relation(cible_label, inverse_relation, source_label):
                             self.graphe.ajouter_relation(cible_label, inverse_relation, source_label)
-                        self.ajouter_relation_csv(cible_label, inverse_relation, source_label)
+                            self.ajouter_relation_csv(cible_label, inverse_relation, source_label)
                 except Exception as e:
-                    logging.error(f"Erreur lors de l'ajout du noeud ou de la relation: {e}")
+                    logging.error(f"Erreur lors de l'ajout de la relation '{relation}' entre '{source_label}' et '{cible_label}': {e}")
             else:
-                logging.error(f"Action non reconnue après substitution : {action_evaluated}")
+                # Si la relation n'est pas sous la forme "source" r_relation "target", essayer la forme $x r_relation $y
+                match = re.match(r'\$(\w+)\s+(r_\w+)\s+\$(\w+)', action_evaluated)
+                if match:
+                    source_var, relation, cible_var = match.groups()
+
+                    # Obtenir les word_ids correspondants
+                    source_word_id = variable_mapping.get(source_var)
+                    cible_word_id = variable_mapping.get(cible_var)
+
+                    if not source_word_id or not cible_word_id:
+                        logging.warning(f"Relation ignorée car l'un des nœuds ('{source_var}' ou '{cible_var}') n'existe pas.")
+                        return
+
+                    # Ajouter la relation dans le graphe
+                    if not self.graphe.existe_relation(source_word_id, relation, cible_word_id):
+                        self.graphe.ajouter_relation(source_word_id, relation, cible_word_id)
+                        self.ajouter_relation_csv(source_word_id, relation, cible_word_id)
+
+                    # Ajouter l'inverse si défini
+                    inverse_relation = self.relations_inverses.get(relation)
+                    if inverse_relation:
+                        if not self.graphe.existe_relation(cible_word_id, inverse_relation, source_word_id):
+                            self.graphe.ajouter_relation(cible_word_id, inverse_relation, source_word_id)
+                            self.ajouter_relation_csv(cible_word_id, inverse_relation, source_word_id)
+                else:
+                    logging.error(f"Action non reconnue ou mal formée : {action_evaluated}")
         except Exception as e:
             logging.error(f"Erreur lors de l'exécution de l'action '{action}': {e}")
 
@@ -379,8 +453,31 @@ class MoteurDeRegles:
                 writer.writerow(['source', 'target', 'recurrence'])
                 for (src, tgt), rec in relations.items():
                     writer.writerow([src, tgt, rec])
+            logging.debug(f"Relation '{relation}' mise à jour dans '{csv_filename}': {source} -> {cible} ({relations[key]} fois)")
         except Exception as e:
             logging.error(f"Erreur lors de l'ajout ou de la mise à jour de la relation '{relation}' dans '{csv_path}': {e}")
+
+    def get_word_id_by_lemma(self, lemma):
+        """Retourne le word_id correspondant au lemme donné."""
+        for token_primarykey, word_id in self.token_to_word_id.items():
+            if self.graphe.existe_noeud(word_id):
+                node_data = self.graphe.G.nodes[word_id]
+                if node_data['type'] == 'word' and node_data['valeur'].lower() == lemma:
+                    return word_id
+        return None
+
+    def get_word_text_by_lemma(self, lemma):
+        """Retourne le word_id correspondant au lemme donné."""
+        return self.get_word_id_by_lemma(lemma.lower())
+
+    def get_word_id_by_label(self, label):
+        """Retourne le word_id correspondant au label donné."""
+        label = label.lower()
+        # Rechercher le word_id par le label
+        for node, data in self.graphe.G.nodes(data=True):
+            if data['type'] == 'word' and data['valeur'].lower() == label:
+                return node
+        return None
 
     def enregistrer_relations(self):
         """Cette méthode est désormais obsolète car les CSV sont remplis en temps réel."""

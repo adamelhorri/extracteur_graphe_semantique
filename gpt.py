@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 # Définir les extensions de fichiers à lire
-EXTENSIONS = {'.ts', '.css', '.html', '.py', '.json'}
+EXTENSIONS = {'.ts', '.css', '.html', '.py'}
 
 def get_file_content(file_path):
     """Lit le contenu d'un fichier et le renvoie sous forme de chaîne."""

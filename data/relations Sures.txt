@@ -1,2 +1,0 @@
-# Relation r_isa basée sur l'apposition
-$x.pos_ == 'propn' & $y.pos_ == 'noun' & $y.dep_ == 'appos' & $y.head.i == $x.i ⇒ $x r_isa $y

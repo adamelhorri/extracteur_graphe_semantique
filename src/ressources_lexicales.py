@@ -22,23 +22,7 @@ class RessourcesLexicales:
                     synonyms.add(synonym)
         # Ajouter des synonymes manuellement si nécessaire, mais uniquement s'ils sont dans le texte
         manual_synonyms = {
-            'chat': ['félin'],
-            'animal': [],
-            'jour': [],
-            'nuit': [],
-            'pain': [],
-            'fromage': [],
-            'souris': [],
-            'chien': [],
-            'mange': [],
-            'succède': [],
-            'dort': [],
-            'endormi': [],
-            'est': [],
-            'sont': [],
-            'délicieux': [],
-            'lumineux': [],
-            'sombre': []
+
         }
         for syn in manual_synonyms.get(mot, []):
             if syn.lower() in self.mots_du_texte:
@@ -56,23 +40,7 @@ class RessourcesLexicales:
                             antonyms.add(antonym)
         # Ajouter des antonymes manuellement si nécessaire, mais uniquement s'ils sont dans le texte
         manual_antonyms = {
-            'jour': ['nuit'],
-            'nuit': ['jour'],
-            'animal': [],
-            'chat': [],
-            'chien': [],
-            'pain': [],
-            'fromage': [],
-            'souris': [],
-            'mange': [],
-            'succède': [],
-            'dort': [],
-            'endormi': [],
-            'est': [],
-            'sont': [],
-            'délicieux': [],
-            'lumineux': [],
-            'sombre': []
+
         }
         for ant in manual_antonyms.get(mot, []):
             if ant.lower() in self.mots_du_texte:
@@ -89,13 +57,7 @@ class RessourcesLexicales:
                         hyperonyms.add(hyperonym)
         # Ajouter des hyperonymes manuellement si nécessaire, mais uniquement s'ils sont dans le texte
         manual_hyperonyms = {
-            'chat': ['animal'],
-            'chien': ['animal'],
-            'souris': ['animal'],
-            'pain': [],
-            'fromage': [],
-            'jour': [],
-            'nuit': []
+
         }
         for hyper in manual_hyperonyms.get(mot, []):
             if hyper.lower() in self.mots_du_texte:
@@ -113,20 +75,7 @@ class RessourcesLexicales:
                         hyponyms.add(hyponym)
         # Ajouter des hyponyms manuellement si nécessaire, mais uniquement s'ils sont dans le texte
         manual_hyponyms = {
-            'animal': ['chat', 'chien', 'souris'],
-            'jour': [],
-            'nuit': [],
-            'pain': [],
-            'fromage': [],
-            'mange': [],
-            'succède': [],
-            'dort': [],
-            'endormi': [],
-            'est': [],
-            'sont': [],
-            'délicieux': [],
-            'lumineux': [],
-            'sombre': []
+
         }
         for hypo in manual_hyponyms.get(mot, []):
             if hypo.lower() in self.mots_du_texte:
