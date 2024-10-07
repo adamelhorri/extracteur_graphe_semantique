@@ -1,6 +1,8 @@
 
 # Analyseur Sémantique - Extraction de Relations Sémantiques
-
+## avant tout
+Il faut telecharger et inserer le dossier data dans le même repo que src 
+https://drive.google.com/file/d/1hQV05fKsB3PN8jqewcAcSz7sl3gaWnEr/view?usp=drive_link
 ## Description
 
 Ce projet consiste à développer un analyseur sémantique capable d'extraire des relations sémantiques à partir de textes en langue française. Le système est structuré en Python, avec une approche orientée objet, et utilise des fichiers textuels pour extraire des informations, notamment des expressions composées. Ces données sont ensuite organisées sous forme de graphes sémantiques où chaque nœud représente une entité et chaque relation capture une association sémantique spécifique.
@@ -21,6 +23,8 @@ Le projet est organisé avec une architecture modulaire dans un environnement Py
 analyseur_semantique/
 ├── src/
 │   ├── __init__.py
+|   ├──Tokenizer
+|   |  └── TOkenizer(creation de token syntaxique)
 │   ├── noeud.py
 │   ├── mot.py
 │   ├── expression_composee.py
