@@ -53,7 +53,8 @@ class Tokenizer:
 
         tokens = []
         # Regular expression to match words, punctuation, and sentence-ending punctuation
-        pattern = re.compile(r"\b\w+(?:-\w+)*\b|[.!?;\"()\[\]{}\-]", re.UNICODE)
+        pattern = re.compile(r"\b\w+(?:-\w+)*\b|[.,!?;\"()\[\]{}\-]", re.UNICODE)
+
         raw_tokens = pattern.findall(text)
 
         token_id = 0  # Initialize token ID

@@ -108,31 +108,56 @@ class Disambiguator:
                 token.pos_ = "AUX"
                 logging.debug(f"Token '{token.text}' reclassified as AUX")
 
+            # New condition: If a verb is preceded by an element that has 'Ver' in its pos_candidates
+            # and 'être' or 'avoir' in its lemma_candidates, reclassify the preceding element as 'AUX'
+            if token.pos_ == "VERB" and prev_token:
+                # Check if 'Ver' is in prev_token.pos_candidates
+                prev_has_ver = any(cand.startswith("Ver") for cand, _ in prev_token.pos_candidates)
+                # Check if 'être' or 'avoir' is in prev_token.lemma_candidates
+                prev_has_aux_lemma = any(lemma in auxiliary_verbs for lemma, _ in prev_token.lemma_candidates)
+                if prev_has_ver and prev_has_aux_lemma:
+                    original_pos = prev_token.pos_
+                    prev_token.pos_ = "AUX"
+                    logging.debug(f"Prev token '{prev_token.text}' reclassified from '{original_pos}' to 'AUX' based on new condition.")
+            # New condition: If two NOUNs follow each other and the second has 'Ver' in pos_candidates
+            if prev_token and prev_token.pos_ == "NOUN" and token.pos_ == "NOUN":
+                # Check if the current token has 'Ver' in its pos_candidates
+                current_has_ver = any(cand.startswith("Ver") for cand, _ in token.pos_candidates)
+                if current_has_ver:
+                    original_pos = token.pos_
+                    token.pos_ = "VERB"
+                    logging.debug(f"Token '{token.text}' reclassified from '{original_pos}' to 'VERB' based on new condition.")
+                    
+                    # Re-disambiguate lemma with the new POS
+                    disamb_lemma = self.disambiguate_lemma(token.pos_, lemma_candidates, token, morphological_analyzer, lexicon)
+                    token.lemma_ = disamb_lemma
+                    logging.debug(f"Re-disambiguated Lemma for '{token.text}' after POS change: {disamb_lemma}")
+
             # Condition existante : Transformation du POS si deux tokens adjacents sont des NOUN et possèdent un candidat 'Adj'
             if prev_token and prev_token.pos_ == "NOUN" and token.pos_ == "NOUN":
-                # Vérifier si l'un des deux tokens a un candidat POS qui commence par 'Adj'
+                # Check if either token has 'Adj' in their pos_candidates
                 prev_has_adj = any(cand.startswith("Adj") for cand, _ in prev_token.pos_candidates)
                 current_has_adj = any(cand.startswith("Adj") for cand, _ in token.pos_candidates)
 
-                if prev_has_adj and current_has_adj:
+                if prev_has_adj or current_has_adj:
                     adj_tokens = []
 
                     if prev_has_adj:
-                        # Obtenir le score le plus élevé pour un candidat POS commençant par 'Adj' dans le token précédent
+                        # Get the highest score for 'Adj' candidate in prev_token
                         prev_adj_scores = [score for cand, score in prev_token.pos_candidates if cand.startswith("Adj")]
                         if prev_adj_scores:
                             prev_max_adj_score = max(prev_adj_scores)
                             adj_tokens.append((prev_token, prev_max_adj_score))
 
                     if current_has_adj:
-                        # Obtenir le score le plus élevé pour un candidat POS commençant par 'Adj' dans le token actuel
+                        # Get the highest score for 'Adj' candidate in token
                         current_adj_scores = [score for cand, score in token.pos_candidates if cand.startswith("Adj")]
                         if current_adj_scores:
                             current_max_adj_score = max(current_adj_scores)
                             adj_tokens.append((token, current_max_adj_score))
 
                     if adj_tokens:
-                        # Sélectionner le token avec le score 'Adj' le plus élevé
+                        # Select the token with the highest 'Adj' score
                         token_to_modify, _ = max(adj_tokens, key=lambda x: x[1])
                         original_pos = token_to_modify.pos_
                         token_to_modify.pos_ = "ADJ"
@@ -140,7 +165,6 @@ class Disambiguator:
                             f"Modified POS of token '{token_to_modify.text}' from '{original_pos}' to 'ADJ' "
                             f"due to adjacent NOUNs with 'Adj' candidates."
                         )
-
             # Nouvelle condition spécifique : ADJ + "et" + NOUN avec candidat 'Adj'
             if (
                 prev_prev_token
@@ -166,6 +190,11 @@ class Disambiguator:
                 token.pos_="ADV"
             if prev_token and prev_token.text=="ne":
                 token.pos_="VERB"
+            if token.text in {"leur","leurs","son","sa","ses","son","ta","ton","tes","ma","mon","mes","votre","vos"}:
+                token.pos_="DET"
+            if token.text in {"dessus","dessous"}:
+                token.pos_="ADP"
+        
             # Update the context POS and tokens for the next iteration
             prev_pos = disamb_pos if disamb_pos else 'BOS'
             prev_prev_token = prev_token
@@ -254,16 +283,10 @@ class Disambiguator:
 
     def disambiguate_lemma(self, pos, lemma_candidates, token, morphological_analyzer, lexicon, prev_pos=None):
         """
-        Select the best lemma candidate by ensuring POS matches, then preferring singular and gender-matched lemmas,
-        and finally preferring masculine lemmas among those. If the token is a verb and one of the lemma candidates 
-        contains 'Ver:Inf', that candidate is chosen.
-
-        If the POS is 'VERB' or 'AUX' and the previous POS is 'DET', reclassify as 'NOUN'.
-
-        If a rule is found in the loaded JSON file with an occurrence > 20, replace the best lemma with spaCy's lemma.
+        Disambiguate the lemma for a token based on its POS and lemma candidates.
 
         Parameters:
-            pos (str): The disambiguated POS tag.
+            pos (str): The disambiguated POS tag of the token.
             lemma_candidates (list): List of tuples (lemma, score).
             token (Token): The token being processed.
             morphological_analyzer (MorphologicalAnalyzer): Instance of the morphological analyzer.
@@ -281,67 +304,82 @@ class Disambiguator:
             logging.warning(f"No lemma candidates available for POS '{pos}'. Assigning the token itself as lemma.")
             return token.text.lower()  # Default to the lowercase form of the token itself
 
-        # Step 1: Special rule - Reclassify 'VERB' or 'AUX' to 'NOUN' if previous POS is 'DET'
-        if pos in ['VERB', 'AUX'] and prev_pos == 'DET':
-            logging.info(f"Reclassifying POS 'VERB' or 'AUX' to 'NOUN' because previous POS is 'DET'.")
-            pos = 'NOUN'
-
-        pos_matched_lemmas = []
-        best_lemma = None
-
-        # Step 2: Evaluate each lemma candidate for POS matching
-        for lemma, score in lemma_candidates:
-            temp_token = Token(lemma)
-            temp_token.pos_candidates = token.pos_candidates
-            temp_token.pos_ = self.disambiguate_pos(None, temp_token.pos_candidates)
-            temp_token.pos_ = self.map_pos_to_spacy(temp_token.pos_)
-            morphological_analyzer.analyze([temp_token], lexicon)
-
-            if temp_token.pos_ == pos:
-                pos_matched_lemmas.append((temp_token, lemma, score))
-
-        # Step 3: If no POS-matched lemmas, return the first lemma
-        if not pos_matched_lemmas:
-            return lemma_candidates[0][0]
-
-        # Step 4: Among POS-matched lemmas, prefer singular candidates
-        singular_lemmas = [lemma_info for lemma_info in pos_matched_lemmas if lemma_info[0].morph.get('Number') == 'Sing']
-        if singular_lemmas:
-            pos_matched_lemmas = singular_lemmas
-            logging.debug(f"Filtered lemmas to prefer singular: {[lemma[1] for lemma in pos_matched_lemmas]}")
-
-        # Step 5: Among remaining lemmas, prefer masculine lemmas
-        masculine_lemmas = [lemma_info for lemma_info in pos_matched_lemmas if lemma_info[0].morph.get('Gender') == 'Mas' and token.pos_ != 'NOUN']
-        if masculine_lemmas:
-            pos_matched_lemmas = masculine_lemmas
-            logging.debug(f"Filtered lemmas to prefer masculine: {[lemma[1] for lemma in masculine_lemmas]}")
-
-        # Step 6: Return the highest scoring lemma among the remaining filtered ones
-        best_lemma = max(pos_matched_lemmas, key=lambda x: x[2])[1]
-        logging.debug(f"Best lemma selected after preferences: {best_lemma}")
-
-        # Step 7: Check if a rule from the JSON file applies (occurrences > 15)
-        normalized_text = token.text.lower().strip()  # Ensure the text matches the format in the JSON
-        key = f"{normalized_text}_{pos}"
-
-        logging.debug(f"Key being used for JSON lookup: {key}")
-
-        if key in self.lemma_replacement_rules:
-            rule = self.lemma_replacement_rules[key]
-            logging.debug(f"Rule found for key: {key} with occurrences {rule['occurrences']}")
-            if rule["occurrences"] > 15:
-                if best_lemma == rule["structure"]["system_lemma"]:
-                    logging.info(f"Replacing '{best_lemma}' with spaCy lemma '{rule['structure']['spacy_lemma']}' due to occurrence threshold.")
-                    best_lemma = rule['structure']['spacy_lemma']
-                    return rule["structure"]["spacy_lemma"]
-                else:
-                    logging.debug(f"Best lemma '{best_lemma}' does not match system lemma '{rule['structure']['system_lemma']}'")
+        # Step 1: If POS is 'VERB', prefer lemmas that have 'Ver:Inf' in their pos_candidates
+        if pos == 'VERB':
+            verb_inf_lemmas = []
+            for lemma, score in lemma_candidates:
+                temp_token = Token(lemma)
+                # Analyze the temp_token to get its pos_candidates
+                morphological_analyzer.analyze([temp_token], lexicon)
+                # Check if 'Ver:Inf' is in temp_token.pos_candidates
+                if any(cand.startswith('Ver:Inf') for cand, _ in temp_token.pos_candidates):
+                    verb_inf_lemmas.append((lemma, score))
+            if verb_inf_lemmas:
+                # If we have verb infinitive lemmas, select the one with the highest score
+                best_lemma = max(verb_inf_lemmas, key=lambda x: x[1])[0]
+                logging.debug(f"Selected verb infinitive lemma: {best_lemma}")
+                return best_lemma
             else:
-                logging.debug(f"Occurrences for key '{key}' are less than or equal to 15: {rule['occurrences']}")
+                # No verb infinitive lemmas found, default to highest scoring lemma
+                best_lemma = max(lemma_candidates, key=lambda x: x[1])[0]
+                logging.debug(f"No infinitive verb lemmas found, selected best lemma: {best_lemma}")
+                return best_lemma
         else:
-            logging.debug(f"No rule found for key: {key}")
+            # Step 2: Evaluate each lemma candidate for POS matching
+            pos_matched_lemmas = []
+            for lemma, score in lemma_candidates:
+                temp_token = Token(lemma)
+                # Analyze temp_token to get its morphological features
+                morphological_analyzer.analyze([temp_token], lexicon)
+                # Map the first pos_candidate to spaCy POS
+                temp_token.pos_ = self.map_pos_to_spacy(temp_token.pos_candidates[0][0]) if temp_token.pos_candidates else None
+                if temp_token.pos_ == pos:
+                    pos_matched_lemmas.append((temp_token, lemma, score))
 
-        return best_lemma
+            # Step 3: If no POS-matched lemmas, return the highest scoring lemma
+            if not pos_matched_lemmas:
+                best_lemma = max(lemma_candidates, key=lambda x: x[1])[0]
+                logging.debug(f"No POS-matched lemmas found, selected best lemma: {best_lemma}")
+                return best_lemma
+
+            # Step 4: Among POS-matched lemmas, prefer singular candidates
+            singular_lemmas = [lemma_info for lemma_info in pos_matched_lemmas if lemma_info[0].morph.get('Number') == 'Sing']
+            if singular_lemmas:
+                pos_matched_lemmas = singular_lemmas
+                logging.debug(f"Filtered lemmas to prefer singular: {[lemma_info[1] for lemma_info in pos_matched_lemmas]}")
+
+            # Step 5: Among remaining lemmas, prefer masculine lemmas
+            masculine_lemmas = [lemma_info for lemma_info in pos_matched_lemmas if lemma_info[0].morph.get('Gender') == 'Mas']
+            if masculine_lemmas:
+                pos_matched_lemmas = masculine_lemmas
+                logging.debug(f"Filtered lemmas to prefer masculine: {[lemma_info[1] for lemma_info in masculine_lemmas]}")
+
+            # Step 6: Return the highest scoring lemma among the remaining filtered ones
+            best_lemma = max(pos_matched_lemmas, key=lambda x: x[2])[1]
+            logging.debug(f"Best lemma selected after preferences: {best_lemma}")
+
+            # Step 7: Check if a rule from the JSON file applies (occurrences > 15)
+            normalized_text = token.text.lower().strip()
+            key = f"{normalized_text}_{pos}"
+
+            logging.debug(f"Key being used for JSON lookup: {key}")
+
+            if key in self.lemma_replacement_rules:
+                rule = self.lemma_replacement_rules[key]
+                logging.debug(f"Rule found for key: {key} with occurrences {rule['occurrences']}")
+                if rule["occurrences"] > 15:
+                    if best_lemma == rule["structure"]["system_lemma"]:
+                        logging.info(f"Replacing '{best_lemma}' with spaCy lemma '{rule['structure']['spacy_lemma']}' due to occurrence threshold.")
+                        best_lemma = rule['structure']['spacy_lemma']
+                        return best_lemma
+                    else:
+                        logging.debug(f"Best lemma '{best_lemma}' does not match system lemma '{rule['structure']['system_lemma']}'")
+                else:
+                    logging.debug(f"Occurrences for key '{key}' are less than or equal to 15: {rule['occurrences']}")
+            else:
+                logging.debug(f"No rule found for key: {key}")
+
+            return best_lemma
 
     def is_proper_noun(self, pos):
         """

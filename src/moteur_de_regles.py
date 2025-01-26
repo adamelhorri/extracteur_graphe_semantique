@@ -6,7 +6,6 @@ import os
 import csv
 import logging
 from collections import defaultdict
-from ressources_lexicales import RessourcesLexicales
 from graphe_semantique import GrapheSemantique
 from SyntaxicExtraction import SyntaxicExtraction
 
@@ -20,7 +19,8 @@ class MoteurDeRegles:
             'r_hypo', 'r_anto', 'r_anto_syntaxique',
             'r_agent', 'r_patient', 'r_succ',
             'r_lemma', 'r_has_magn', 'r_has_antimagn',
-            'r_family', 'r_lieu', 'r_carac'  # Ajout de r_carac
+            'r_family', 'r_lieu', 'r_carac',  # Ajout de r_carac
+            'r_anaphore'  # Ajout de r_anaphore
         ]
         self.relations_inverses = {
             'r_agent': 'r_agent-1',
@@ -34,6 +34,7 @@ class MoteurDeRegles:
         self.initialiser_csv()
         self.word_counter = 0  # Compteur pour générer des identifiants uniques
         self.token_to_word_id = {}  # Mapping des token_primarykey aux word_ids
+        self.anaphora_relations = []  # Liste pour stocker les relations d'anaphore
 
     def initialiser_csv(self):
         """Créer les fichiers CSV pour chaque type de relation avec les en-têtes s'ils n'existent pas."""
@@ -75,35 +76,37 @@ class MoteurDeRegles:
     def appliquer_regles(self, texte):
         """Appliquer les règles après analyse du texte."""
         try:
-            self.ressources = RessourcesLexicales(texte)
             syntaxic_extraction = SyntaxicExtraction(texte)
             tokens = syntaxic_extraction.tokens
 
             self.appliquer_relations(tokens)
+            self.traiter_anaphores(tokens)  # Traitement des anaphores
             for regle in self.regles:
                 self.appliquer_regle(regle, tokens)
+            self.dupliquer_relations_anaphores()  # Duplication des relations d'anaphore
             # Les relations sont déjà enregistrées au fur et à mesure
         except Exception as e:
             logging.error(f"Erreur lors de l'application des règles: {e}")
+        print(tokens)
 
     def appliquer_relations(self, tokens):
         """Appliquer les relations prédéfinies entre les tokens."""
         previous_word_id = None
 
         for mot in tokens:
-            self.word_counter += 1
-            word_id = f"word_{self.word_counter}"
-            pos_id = f"pos_{self.word_counter}"
-            lemma_id = f"lemma_{self.word_counter}"
+            # Utiliser la chaîne du mot (en minuscules) au lieu d'un identifiant artificiel
+            word_id = mot.text.lower()
+            pos_id = f"{word_id}_pos"
+            lemma_id = f"{word_id}_lemma"
 
             mot_lemma = mot.lemma_.lower()
             mot_pos = mot.pos_.lower()
 
             try:
-                # Ajouter le nœud central du mot avec un identifiant unique
+                # Ajouter le nœud central du mot en utilisant directement le texte
                 self.graphe.ajouter_noeud(word_id, 'word', mot.text)
 
-                # Mapper le token_primarykey à word_id
+                # Mapper le token_primarykey à la chaîne du mot
                 if mot.token_primarykey:
                     self.token_to_word_id[mot.token_primarykey] = word_id
                     logging.debug(f"Mapping {mot.token_primarykey} -> {word_id}")
@@ -119,6 +122,7 @@ class MoteurDeRegles:
                 self.graphe.ajouter_noeud(lemma_id, 'lemma', mot_lemma)
                 self.graphe.ajouter_relation(word_id, "r_lemma", lemma_id)
                 self.ajouter_relation_csv(word_id, "r_lemma", lemma_id)
+
             except Exception as e:
                 logging.error(f"Erreur lors de l'ajout des nœuds pour le mot '{mot.text}': {e}")
 
@@ -128,10 +132,93 @@ class MoteurDeRegles:
                     if not self.graphe.existe_relation(previous_word_id, "r_succ", word_id):
                         self.graphe.ajouter_relation(previous_word_id, "r_succ", word_id)
                         self.ajouter_relation_csv(previous_word_id, "r_succ", word_id)
+                        logging.debug(f"Relation r_succ ajoutée: {previous_word_id} -> {word_id}")
                 except Exception as e:
                     logging.error(f"Erreur lors de l'ajout de la relation 'r_succ' entre '{previous_word_id}' et '{word_id}': {e}")
 
             previous_word_id = word_id
+
+    def traiter_anaphores(self, tokens):
+        """Traiter les anaphores en comparant les pronoms et adpositions avec les éléments précédents."""
+        # Stocker les candidats pour référence (nsubj, ROOT si NOUN, obj)
+        candidats = []
+        for mot in tokens:
+            if (mot.dep_ == 'ROOT' and mot.pos_.lower() == 'noun') or \
+               (mot.dep_ == 'nsubj' and mot.pos_.lower() == 'noun') or \
+               (mot.dep_ == 'obj' and mot.pos_.lower() == 'noun'):
+                candidats.append(mot)
+
+        # Fonction de priorité pour choisir le bon candidat
+        def select_best_candidate(candidates):
+            for dep in ['ROOT', 'nsubj', 'obj']:
+                for candidate in candidates:
+                    if candidate.dep_ == dep:
+                        return candidate
+            return None  # Si aucun candidat valide n'est trouvé
+
+        # Parcourir les tokens pour trouver PRON et ADP
+        for i, mot in enumerate(tokens):
+            if mot.pos_.lower() in ['pron', 'adp']:
+                gender_mot = mot.gender if hasattr(mot, 'gender') else None
+                number_mot = mot.number if hasattr(mot, 'number') else None
+
+                # Filtrer les candidats compatibles en fonction du genre et du nombre
+                candidats_compatibles = [
+                    candidat for candidat in candidats
+                    if (candidat.gender if hasattr(candidat, 'gender') else None) == gender_mot and
+                       (candidat.number if hasattr(candidat, 'number') else None) == number_mot
+                ]
+
+                # Sélectionner le meilleur candidat en fonction de la priorité ROOT > nsubj > obj
+                meilleur_candidat = select_best_candidate(candidats_compatibles)
+                
+                if meilleur_candidat:
+                    word_id_mot = self.token_to_word_id.get(mot.token_primarykey)
+                    word_id_candidat = self.token_to_word_id.get(meilleur_candidat.token_primarykey)
+
+                    if word_id_mot and word_id_candidat:
+                        # Ajouter la relation r_anaphore
+                        if not self.graphe.existe_relation(word_id_mot, "r_anaphore", word_id_candidat):
+                            self.graphe.ajouter_relation(word_id_mot, "r_anaphore", word_id_candidat)
+                            self.ajouter_relation_csv(word_id_mot, "r_anaphore", word_id_candidat)
+                            # Stocker la relation d'anaphore pour duplication ultérieure
+                            self.anaphora_relations.append((word_id_mot, word_id_candidat))
+                            logging.debug(f"Relation r_anaphore ajoutée: {word_id_mot} -> {word_id_candidat}")
+
+    def dupliquer_relations_anaphores(self):
+        """
+        Dupliquer les relations sémantiques impliquant des anaphores.
+        Si une relation pointe depuis ou vers une anaphore, la même relation est créée depuis ou vers le référent de cette anaphore.
+        """
+        try:
+            logging.info("Début de la duplication des relations pour les anaphores.")
+            for anaphora_source, referent in self.anaphora_relations:
+                logging.debug(f"Traitement de l'anaphore: {anaphora_source} réfère à {referent}")
+
+                # Parcourir toutes les relations sortantes de l'anaphore
+                relations_from = self.graphe.get_relations_from(anaphora_source)
+                for relation, cible in relations_from:
+                    if relation != 'r_anaphore':
+                        logging.debug(f"Duplicating relation from {referent} --{relation}--> {cible}")
+                        # Créer la même relation depuis le référent vers la cible
+                        if not self.graphe.existe_relation(referent, relation, cible):
+                            self.graphe.ajouter_relation(referent, relation, cible)
+                            self.ajouter_relation_csv(referent, relation, cible)
+                            logging.info(f"Relation dupliquée: {referent} --{relation}--> {cible}")
+
+                # Parcourir toutes les relations entrantes vers l'anaphore
+                relations_to = self.graphe.get_relations_to(anaphora_source)
+                for relation, source in relations_to:
+                    if relation != 'r_anaphore':
+                        logging.debug(f"Duplicating relation from {source} --{relation}--> {referent}")
+                        # Créer la même relation vers le référent depuis la source
+                        if not self.graphe.existe_relation(source, relation, referent):
+                            self.graphe.ajouter_relation(source, relation, referent)
+                            self.ajouter_relation_csv(source, relation, referent)
+                            logging.info(f"Relation dupliquée: {source} --{relation}--> {referent}")
+            logging.info("Duplication des relations pour les anaphores terminée.")
+        except Exception as e:
+            logging.error(f"Erreur lors de la duplication des relations pour les anaphores: {e}")
 
     def appliquer_regle(self, regle, tokens):
         """Appliquer une règle spécifique aux tokens."""
@@ -382,6 +469,7 @@ class MoteurDeRegles:
                     if not self.graphe.existe_relation(source_label, relation, cible_label):
                         self.graphe.ajouter_relation(source_label, relation, cible_label)
                         self.ajouter_relation_csv(source_label, relation, cible_label)
+                        logging.debug(f"Relation ajoutée: {source_label} --{relation}--> {cible_label}")
 
                     # Ajouter l'inverse si défini
                     inverse_relation = self.relations_inverses.get(relation)
@@ -389,6 +477,7 @@ class MoteurDeRegles:
                         if not self.graphe.existe_relation(cible_label, inverse_relation, source_label):
                             self.graphe.ajouter_relation(cible_label, inverse_relation, source_label)
                             self.ajouter_relation_csv(cible_label, inverse_relation, source_label)
+                            logging.debug(f"Relation inverse ajoutée: {cible_label} --{inverse_relation}--> {source_label}")
                 except Exception as e:
                     logging.error(f"Erreur lors de l'ajout de la relation '{relation}' entre '{source_label}' et '{cible_label}': {e}")
             else:
@@ -409,6 +498,7 @@ class MoteurDeRegles:
                     if not self.graphe.existe_relation(source_word_id, relation, cible_word_id):
                         self.graphe.ajouter_relation(source_word_id, relation, cible_word_id)
                         self.ajouter_relation_csv(source_word_id, relation, cible_word_id)
+                        logging.debug(f"Relation ajoutée via variables: {source_word_id} --{relation}--> {cible_word_id}")
 
                     # Ajouter l'inverse si défini
                     inverse_relation = self.relations_inverses.get(relation)
@@ -416,6 +506,7 @@ class MoteurDeRegles:
                         if not self.graphe.existe_relation(cible_word_id, inverse_relation, source_word_id):
                             self.graphe.ajouter_relation(cible_word_id, inverse_relation, source_word_id)
                             self.ajouter_relation_csv(cible_word_id, inverse_relation, source_word_id)
+                            logging.debug(f"Relation inverse ajoutée via variables: {cible_word_id} --{inverse_relation}--> {source_word_id}")
                 else:
                     logging.error(f"Action non reconnue ou mal formée : {action_evaluated}")
         except Exception as e:
