@@ -92,11 +92,8 @@ Chaque ligne est composée d'un identifiant (`id`) suivi d'une expression compos
 
 ### Exécution des tests
 
-Pour exécuter les tests, assurez-vous que vous êtes dans le répertoire racine du projet, puis utilisez la commande suivante pour exécuter tous les tests :
+Pour exécuter le test de demo lancer le test `tests/DEMO.py`
 
-```bash
-python -m unittest discover tests
-```
 
 ## Avancement
 
